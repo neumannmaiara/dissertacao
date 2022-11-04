@@ -1,0 +1,175 @@
+import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import math as mt
+from timeit import default_timer as timer
+import numba
+from numba import jit, guvectorize, vectorize, cuda, float64, float32, int64, prange, uint32, f8, uint8, threading_layer
+
+#Parameter setup
+
+x0=530.; vx0=0.; y0=35.; vy0=0.; t0=0.0;
+dt=0.1;
+St=125;
+posx=(); posy=(); vpx=(); vpy=() ;T=();
+
+#Function definitions
+
+pathx="D:/Maiara/UFRJ/LBM/valvulaBruno_SemCampo/Vfx"
+pathy="D:/Maiara/UFRJ/LBM/valvulaBruno_SemCampo/Vfy"
+
+#Functions that imports the velocity fields at time t
+
+def vfx(t):
+    return np.array(np.split(np.fromfile(pathx+str(t)+".dat", dtype=np.float64),1100))
+
+def vfy(t):
+    return np.array(np.split(np.fromfile(pathy+str(t)+".dat", dtype=np.float64),1100))
+
+#Bilinear velocity interpolation
+
+def vfxbilinear(x,y,t):
+    x1=int(x);y1=int(y);x2=int(x+1);y2=int(y+1);
+
+    return (vfx(t)[x1][y1]*(x2-x)*(y2-y)+vfx(t)[x2][y1]*(x-x1)*(y2-y)+vfx(t)[x1][y2]*(x2-x)*(y-y1)+vfx(t)[x2][y2]*(x-x1)*(y-y1))/((x2-x1)*(y2-y1))
+
+
+def vfybilinear(x,y,t):
+    x1=int(x);y1=int(y);x2=int(x+1);y2=int(y+1);
+
+    return (vfy(t)[x1][y1]*(x2-x)*(y2-y)+vfy(t)[x2][y1]*(x-x1)*(y2-y)+vfy(t)[x1][y2]*(x2-x)*(y-y1)+vfy(t)[x2][y2]*(x-x1)*(y-y1))/((x2-x1)*(y2-y1))
+
+#Force used into the Newtons Second Law F(x,vx,y,vy,t)
+
+def Fx(x,vx,y,vy,t):
+    return (1/St)*(vfxbilinear(x,y,t)-vx)
+
+def Fy(x,vx,y,vy,t):
+    return (1/St)*(vfybilinear(x,y,t)-vy)
+
+
+@jit
+def vfxbilinear2(x,y,VFX):
+    x1=int(x);y1=int(y);x2=int(x+1);y2=int(y+1);
+
+    return (VFX[x1][y1]*(x2-x)*(y2-y)+VFX[x2][y1]*(x-x1)*(y2-y)+VFX[x1][y2]*(x2-x)*(y-y1)+VFX[x2][y2]*(x-x1)*(y-y1))/((x2-x1)*(y2-y1))
+
+
+
+@jit
+def vfybilinear2(x,y,VFY):
+    x1=int(x);y1=int(y);x2=int(x+1);y2=int(y+1);
+
+    return (VFY[x1][y1]*(x2-x)*(y2-y)+VFY[x2][y1]*(x-x1)*(y2-y)+VFY[x1][y2]*(x2-x)*(y-y1)+VFY[x2][y2]*(x-x1)*(y-y1))/((x2-x1)*(y2-y1))
+
+@jit
+def Fx2(x,vx,y,vy,VFX):
+    return (1/St)*(vfxbilinear2(x,y,VFX)-vx)
+
+@jit
+def Fy2(x,vx,y,vy,VFY):
+    return (1/St)*(vfybilinear2(x,y,VFY)-vy)
+
+
+
+#Euler Step
+
+VFX=vfx(t0)
+vx = vx0 + dt*Fx2(x0,vx0,y0,vy0,VFX)
+x = x0 + vx*dt
+posx=np.append(posx,x0)
+vpx=np.append(vpx,vx)
+
+VFY=vfy(t0)
+vy = vy0 + dt*Fy2(x0,vx0,y0,vy0,VFY)
+y = y0 + vy*dt
+posy=np.append(posy,y0)
+vpy=np.append(vpy,vy)
+
+T=np.append(T,0)
+
+xaux=x0; yaux=y0
+vxaux=vx0; vyaux=vy0
+
+
+#Adams-Bashforth Steps
+
+s = timer()
+ 
+for t0 in np.arange(0,1010,10):
+   
+    for i in np.arange(0,1000000):
+
+
+        t=t0+i*dt
+
+
+        #T=np.append(T,t)
+        #posx=np.append(posx,x)
+        #posy=np.append(posy,y)
+
+
+        if t-int(t) != 0 :
+
+            VFX=vfx(float(int(t)))
+            VFY=vfy(float(int(t)))
+
+            vx = vx + (3*dt/2)*Fx2(x,vx,y,vy,VFX) - (dt/2)*Fx2(xaux,vxaux,yaux,vyaux,VFX)
+            vy = vy + (3*dt/2)*Fy2(x,vx,y,vy,VFY) - (dt/2)*Fy2(xaux,vxaux,yaux,vyaux,VFY)
+
+
+
+        else:
+
+            VFX=vfx(t)
+            VFY=vfy(t)
+
+            vx = vx + (3*dt/2)*Fx2(x,vx,y,vy,VFX) - (dt/2)*Fx2(xaux,vxaux,yaux,vyaux,VFX)
+            vy = vy + (3*dt/2)*Fy2(x,vx,y,vy,VFY) - (dt/2)*Fy2(xaux,vxaux,yaux,vyaux,VFY)
+
+        xaux = x; yaux = y
+        vxaux=vx; vyaux=vy
+
+        x = x + vx*dt
+        y = y + vy*dt
+
+        c=t%100
+        if c==0:
+            #fazer tudo no POS
+            posx=np.append(posx, x)
+            posy=np.append(posy, y)
+            T=np.append(T,t)
+            POS=(posx,posy,T)
+
+
+
+
+        if np.logical_or(np.logical_or(np.logical_and(x>600,y<=45),np.logical_and(x>600,y>=135)),x>=1099):
+
+            np.transpose(POS)
+            hatual=str(y0)
+            config=str(t0)
+            f=open("valvulaSemCampo_h0="+hatual+"_"+"config="+config+".dat","wb")
+            f.write(bytearray(np.transpose(POS)))
+            f.close()
+
+            x=530.
+            x0=530.
+            vx0=0.
+            y0=35.
+            y=y0
+            vy0=0.
+            vx=vx0
+            vy=vy0
+            break
+           
+
+
+
+
+
+
+        print(x,y,t,t0,i)
+
+print(timer()-s)

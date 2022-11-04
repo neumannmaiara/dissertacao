@@ -1,0 +1,74 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import numpy.linalg as nl
+from matplotlib import cm
+from matplotlib import figure
+
+    
+
+
+#Function definitions
+
+pathx="D:/Maiara/UFRJ/LBM/valvulaBruno_SemCampo/vfx/Vfx"
+pathy="D:/Maiara/UFRJ/LBM/valvulaBruno_SemCampo/vfy/Vfy"
+
+#Functions that imports the velocity fields at time t
+
+def vfx(t):
+    return np.array(np.split(np.fromfile(pathx+str(float(t))+".dat", dtype=np.float64),1100))
+
+def vfy(t):
+    return np.array(np.split(np.fromfile(pathy+str(float(t))+".dat", dtype=np.float64),1100))
+
+
+for time in range(10000):
+    vx=vfx(time)
+    vy=vfy(time)
+    dvxdx=();dvydx=();dvxdy=();dvydy=();
+    dvxdx=np.gradient(vx,axis=0)
+    dvxdy=np.gradient(vx,axis=1)
+    dvydx=np.gradient(vy,axis=0)
+    dvydy=np.gradient(vy,axis=1)
+    
+    dv=np.zeros([1100,180,2,2])
+    dv[...,0,0]=dvxdx
+    dv[...,0,1]=dvxdy
+    dv[...,1,0]=dvydx
+    dv[...,1,1]=dvydy
+    w=dv[...,1,0]-dv[...,0,1]
+
+
+
+
+
+    matriz_A=np.imag(nl.eigvals(dv))
+
+    c=np.asarray(np.where(((np.imag(nl.eigvals(dv))>0)==True)))[:-1,:]
+
+
+
+
+    lambdas=np.zeros(len(c[0]))
+
+    for i in range(len(c[0])):
+        lambdas[i]=np.abs(matriz_A[c[0,i],c[1,i],0])
+    
+    m=lambdas.mean()
+    sigma=lambdas.std()
+    lambda0=m+0.2*sigma    
+    c=np.asarray(np.where(((np.imag(nl.eigvals(dv))>lambda0)==True)))[:-1,:]
+
+
+    ws=np.zeros([1100,180])
+    for i in range(len(c[0])):
+        ws[c[0,i],c[1,i]]=1
+
+    
+    plt.figure(figsize=(12,6),dpi=180)
+
+    
+    plt.clf();plt.imshow(ws.transpose(), cmap=cm.rainbow)
+  
+    
+    #plt.savefig("valvulaSemCampoParede1lambda=0.2t={0:04d}.png".format(time),bbox_inches='tight')
+    #plt.close()
